@@ -38,7 +38,7 @@ router.get("/", async (req, res, next) => {
     /**
      * @type {void | {questions: question[]}}
      */
-    let qp=null;
+    let qp = null;
     if (req.cookies.sessionID !== undefined) {
         let verified = (await db.VerifySession(req.cookies.sessionID).catch((err) => {
             res.status(500).json({
@@ -50,6 +50,10 @@ router.get("/", async (req, res, next) => {
         if (fail) return;
 
         if (verified != null) {
+            res.cookie("sessionID", req.cookies.sessionID, {
+                maxAge: SessionTimeout,
+                secure: true
+            });
             qp = (await db.getQP().catch((err) => {
                 res.status(500).json({
                     status: "error",
@@ -130,7 +134,8 @@ router.post("/", async (req, res, next) => {
     *              score: number,
     *              answers: string[],
     *              CurrentSesh:string,
-    *               solved:boolean[]
+    *              solved:boolean[],
+    *              subtime:number[]
     *          }}
      */
     let UserData = (await db.GetUserData(Inpt.uid).catch((err) => {
@@ -163,7 +168,7 @@ router.post("/", async (req, res, next) => {
         fail = true;
     }));
     if (fail) return;
-    res.cookie("sessionID", sessionID,{
+    res.cookie("sessionID", sessionID, {
         maxAge: SessionTimeout,
         secure: true
     });
@@ -174,17 +179,9 @@ router.post("/", async (req, res, next) => {
     return;
 });
 
-
-//answer submission
-router.patch("/:ques", async (req, res, next) => {
-    let fail = false, verified = null;
-    if (Date.now() >= StartTime + ContestLength){
-        res.status(400).json({
-            status:"Invalid",
-            message:"invalid request, contest ended"
-        })
-        return;
-    }
+router.delete("/", async (req, res, next) => {
+    var fail = false;
+    var verified = null;
     if (req.cookies.sessionID !== undefined) {
         verified = (await db.VerifySession(req.cookies.sessionID).catch((err) => {
             res.status(500).json({
@@ -195,33 +192,13 @@ router.patch("/:ques", async (req, res, next) => {
         }));
         if (fail) return;
     }
-    if (verified == null){
+    if (verified == null) {
         res.status(401).json({
-            status:"invalid",
-            message:"the user is not logged in"
-        })
+            status: "invalid",
+            message: "no users logged in"
+        });
         return;
     }
-    let Inpt = {
-        quesindex: parseInt(req.params.ques),
-        answer: String(req.body.answer)
-    };
-    if(Inpt.quesindex===NaN) {
-        res.status(400).json({
-            status:"invalid",
-            message:"question index not valid"
-        })
-    }
-    var isCorrect = (await db.verifyAnswer(Inpt.quesindex, Inpt.answer).catch((err) => {
-        res.status(500).json({
-            status: "error",
-            message: "We are sorry, but our servers are facings some issues! If this issue persists, please report this to pihacks@presidency.ac.bd " + err,
-        });
-        fail = true;
-    }));
-    if (fail) return;
-    
-    
     /**
      * @type {?{
  *              uid: string,
@@ -229,7 +206,8 @@ router.patch("/:ques", async (req, res, next) => {
  *              score: number,
  *              answers: string[],
  *              CurrentSesh:string,
- *              solved:boolean[]
+ *              solved:boolean[],
+ *              subtime:number[]
  *          }}
      */
     // @ts-ignore
@@ -248,23 +226,131 @@ router.patch("/:ques", async (req, res, next) => {
         });
         return;
     }
-    
-    UserData.answers[Inpt.quesindex] = Inpt.answer;
-    
-    if(UserData.solved[Inpt.quesindex] && !isCorrect){
-        UserData.score--;
-    }
-    else if (!UserData.solved[Inpt.quesindex] && isCorrect){
-        UserData.score++;
-    }
-    // @ts-ignore
-    UserData.solved[Inpt.quesindex]=isCorrect;
 
-    await db.UpdateUser(UserData);
+    UserData.CurrentSesh=null;
+    await db.UpdateUser(UserData).catch((err) => {
+        res.status(500).json({
+            status: "error",
+            message: "We are sorry, but our servers are facings some issues! If this issue persists, please report this to pihacks@presidency.ac.bd " + err,
+        });
+        fail = true;
+    });
+    if (fail) return;
+
+    res.cookie("sessionID", null, {
+        maxAge: SessionTimeout,
+        secure: true
+    });
+
     res.status(200).json({
         status:"success",
-        message:"Answer submitted successfully"
+        message:"successfully logged out"
     })
+});
+
+//answer submission
+router.patch("/:ques", async (req, res, next) => {
+    let fail = false, verified = null;
+    if (Date.now() >= StartTime + ContestLength) {
+        res.status(400).json({
+            status: "Invalid",
+            message: "invalid request, contest ended"
+        });
+        return;
+    }
+    if (req.cookies.sessionID !== undefined) {
+        verified = (await db.VerifySession(req.cookies.sessionID).catch((err) => {
+            res.status(500).json({
+                status: "error",
+                message: "We are sorry, but our servers are facings some issues! If this issue persists, please report this to pihacks@presidency.ac.bd " + err,
+            });
+            fail = true;
+        }));
+        if (fail) return;
+    }
+    if (verified == null) {
+        res.status(401).json({
+            status: "invalid",
+            message: "the user is not logged in"
+        });
+        return;
+    }
+    res.cookie("sessionID", req.cookies.sessionID, {
+        maxAge: SessionTimeout,
+        secure: true
+    });
+    let Inpt = {
+        quesindex: parseInt(req.params.ques),
+        answer: String(req.body.answer)
+    };
+    if (Inpt.quesindex === NaN) {
+        res.status(400).json({
+            status: "invalid",
+            message: "question index not valid"
+        });
+    }
+    var isCorrect = (await db.verifyAnswer(Inpt.quesindex, Inpt.answer).catch((err) => {
+        res.status(500).json({
+            status: "error",
+            message: "We are sorry, but our servers are facings some issues! If this issue persists, please report this to pihacks@presidency.ac.bd " + err,
+        });
+        fail = true;
+    }));
+    if (fail) return;
+
+
+    /**
+     * @type {?{
+ *              uid: string,
+ *              pass: string,
+ *              score: number,
+ *              answers: string[],
+ *              CurrentSesh:string,
+ *              solved:boolean[],
+ *              subtime:number[]
+ *          }}
+     */
+    // @ts-ignore
+    let UserData = (await db.GetUserData(verified).catch((err) => {
+        res.status(500).json({
+            status: "error",
+            message: "We are sorry, but our servers are facings some issues! If this issue persists, please report this to pihacks@presidency.ac.bd " + err,
+        });
+        fail = true;
+    }));
+    if (fail) return;
+    if (UserData == null) {
+        res.status(400).json({
+            status: "invaid",
+            message: "the given user ID was not found"
+        });
+        return;
+    }
+
+    UserData.answers[Inpt.quesindex] = Inpt.answer;
+
+    if (UserData.solved[Inpt.quesindex] && !isCorrect) {
+        UserData.score--;
+    }
+    else if (!UserData.solved[Inpt.quesindex] && isCorrect) {
+        UserData.score++;
+        UserData.subtime[Inpt.quesindex] = Date.now();
+    }
+    // @ts-ignore
+    UserData.solved[Inpt.quesindex] = isCorrect;
+
+    await db.UpdateUser(UserData).catch((err) => {
+        res.status(500).json({
+            status: "error",
+            message: "We are sorry, but our servers are facings some issues! If this issue persists, please report this to pihacks@presidency.ac.bd " + err,
+        });
+        fail = true;
+    });
+    if (fail) return;
+    res.status(200).json({
+        status: "success",
+        message: "Answer submitted successfully"
+    });
 });
 
 module.exports = router;

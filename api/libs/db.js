@@ -131,7 +131,8 @@ function verifyAnswer(index, answer){
  *              score: number,
  *              answers: string[],
  *              CurrentSesh:string,
- *              solved:boolean[]
+ *              solved:boolean[],
+ *              subtime:number[]
  *          }>
  * }
  */
@@ -162,7 +163,8 @@ function GetUserData(uid) {
  *              score: number,
  *              answers: string[],
  *              CurrentSesh:string,
- *              solved:boolean[]
+ *              solved:boolean[],
+ *              subtime:number[]
  *          }} UserData
  * @param {boolean} NewSesh
  * @returns {Promise<string>}
@@ -170,7 +172,8 @@ function GetUserData(uid) {
 function UpdateUser(UserData, NewSesh = false) {
     return new Promise(async (resolve, reject) => {
         if (NewSesh) {
-            database.ref(BTCBasePath + "/sessions/" + UserData.CurrentSesh).remove();
+            if(UserData.CurrentSesh != null)
+                database.ref(BTCBasePath + "/sessions/" + UserData.CurrentSesh).remove();
             UserData.CurrentSesh = database.ref(BTCBasePath + "/sessions").push({
                 uid: UserData.uid,
                 start: Date.now()
@@ -209,6 +212,7 @@ function VerifySession(sesh) {
                     resolve(null);
                 }
                 else {
+                    database.ref(BTCBasePath + "/sessions/" + sesh + "/start").set(Date.now());
                     resolve(dat.val().uid);
                 }
             }
